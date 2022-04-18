@@ -91,7 +91,7 @@ app.post('/fetching_packages', function(req, res) {
     // console.log(devDependencies)
     res.json(dataSource)
     debugger
-    storing_data_in_database()
+    Reading_files()
     debugger
 })  
 
@@ -108,57 +108,251 @@ app.get('/fetched_data', function(req, res) {
 const path = require('path');
 const directoryPath = path.join(__dirname, 'demo');
 const fs = require('fs');
+const fsp = require('fs').promises;
+const fse = require('fs-extra');
 
 
-function storing_data_in_database() {
-  let filenames = fs.readdirSync(directoryPath);
-  var CVE_DETAILS = []
-  filenames.forEach(function(filename) {
-    var filePath = path.join(__dirname, 'demo', filename);
-    fs.readFile(filePath, {encoding: 'utf-8'}, function(err,data){
-      if(!err){
-
-      const text = data;
-      const obj = JSON.parse(text);
-      const CVE_ID = obj.cve.CVE_data_meta.ID;
-      const CVE_DESCRIPTION = obj.cve.description.description_data[0].value;
-      const CVE_SEVERITY = obj.impact.baseMetricV2.severity;
-      const CVE_VERSION = obj.impact.baseMetricV2.cvssV2.version;
-      const CVE_BASESCORE = obj.impact.baseMetricV2.cvssV2.baseScore;
-      console.log(CVE_ID);
-      console.log(CVE_DESCRIPTION);
-      console.log(CVE_VERSION);
-      console.log(CVE_BASESCORE);
-      console.log(CVE_SEVERITY);
-
-      CVE_DETAILS.push({
-        "CVE-ID": CVE_ID[filename],
-        "DESCRIPTION" : CVE_DESCRIPTION[filename],
-        "VERSION": CVE_VERSION[filename],
-        "BASE-SCORE": CVE_BASESCORE[filename],
-        "SEVERITY": CVE_SEVERITY[filename]
-  })
-  MongoClient.connect(url, function(err, database) {
-    if (err) throw err;
-    var database_collection = database.db("CVE-DATA");
-  
-  //   database_collection.collection("CVE-DETAILS").findOne({"CVE-ID": CVE_ID}, function(err, result) {  
-  //     if (err) throw err;  
-  //     console.log(result.CVE_ID);  
-  // })  
-    database_collection.collection("CVE-DETAILS").insertMany(CVE_DETAILS, function(err, res) {
-         if (err) throw err;
-         console.log("Insert"); 
-    })
-    
-  })
-
-      }
-    })
-
-  })
-  
+ function Reading_files() {
+  console.log("Reading_Files Function Called")
+  let filenames =  ''; 
+  filenames = fs.readdirSync(directoryPath);
+  if(filenames.length === 0){
+    console.log("Khatam...Tata...Tata...Bye...Bye...")
+    return 
+  }
+  console.log(filenames.length)
+   Selecting_files(filenames);
 }
+ async function Selecting_files(All_files){
+  
+    console.log("Selecting_Files Function Called")
+    const SelectedFiles = [];
+     for (let i = 0; i < All_files.length; i++){
+      if(i == 100)
+        break;
+        SelectedFiles[i] =  All_files[i];
+        console.log(SelectedFiles[i])
+        // await resolveAfter2Seconds();
+    }
+       Data_Extracted(SelectedFiles);
+  
+  }
+ 
+  async function Data_Extracted(List_of_files){
+    console.log("Data_Extracted Function Called")
+      const CVE_DETAILS = []   
+
+          for (let i = 0; i < List_of_files.length; i++)
+          {
+                var filePath = path.join(__dirname, 'demo', List_of_files[i]);
+
+                 const data = await fsp.readFile(filePath, {encoding: 'utf-8'});
+                    
+                      
+                          const text =  data;
+                          const obj = JSON.parse(text);
+                          const CVE_ID = obj?.cve?.CVE_data_meta?.ID;
+                          const CVE_DESCRIPTION = obj?.cve?.description?.description_data[0]?.value;
+                          const CVE_SEVERITY = obj?.impact?.baseMetricV2?.severity;
+                          const CVE_VERSION = obj?.impact?.baseMetricV2?.cvssV2?.version;
+                          const CVE_BASESCORE = obj?.impact?.baseMetricV2?.cvssV2?.baseScore;
+                          // console.log(CVE_ID);
+                          // console.log(CVE_DESCRIPTION);
+                          // console.log(CVE_VERSION);
+                          // console.log(CVE_BASESCORE);
+                          // console.log(CVE_SEVERITY);
+                          // await resolveAfter2Seconds();
+                          CVE_DETAILS.push({
+                              "CVEID" : CVE_ID,
+                              "DESCRIPTION" : CVE_DESCRIPTION,
+                              "VERSION": CVE_VERSION,
+                              "BASESCORE": CVE_BASESCORE,
+                              "SEVERITY": CVE_SEVERITY
+                            })
+                            console.log("Details pushed in an array ",i)
+                     
+                 
+
+            }
+            console.log("for loop completed")
+
+            Mongodb_Connection(CVE_DETAILS,List_of_files);
+  }
+
+     async function Mongodb_Connection(CVE_data_set,ListOfFiles){
+        console.log("Mongodb_Connection Function Called")
+    const database =   await MongoClient.connect(url)
+          console.log("Mongo Client Connected")
+              var database_collection =  database.db("CVE");
+              database_collection.collection("CVE-DETAILS").count(function(err,count){
+              if(!err && count == 0){
+                console.log("Length :",CVE_data_set.length) 
+                  database_collection.collection("CVE-DETAILS").insertMany(CVE_data_set, function(err, res) {
+                    console.log("Data Inserted into Database if Empty")
+                    if (err){ console.log(err)}
+                    console.log("Inserted"); 
+                  })
+                }
+                else
+                {
+                  console.log("Length :",CVE_data_set.length)
+                    for(let i = 0; i < CVE_data_set.length ; i++ ){
+                            // console.log(CVE_data_set[i].CVEID)
+
+                            database_collection.collection("CVE-DETAILS").findOne({ "CVEID": CVE_data_set[i].CVEID },function(err, result) {  
+                                  if (err) throw err;
+                                    
+                                  if(result == null){
+                                      database_collection.collection("CVE-DETAILS").insertOne(CVE_data_set[i], function(err, res) {
+                                      console.log("Data Inserted into Database")
+                                      if (err){ console.log(err)}
+                                      console.log(CVE_data_set[i].CVEID,"Inserted"); 
+                                      })
+                                    }
+                                  else
+                                  {  
+                                    let Matched_CVE_ID = result.CVEID;
+                                    console.log("CVE-ID : "+ Matched_CVE_ID+ " already exist in the Database...!!!");
+                                    }  
+                              });
+                      }
+                  }
+              })   
+          
+          Move_Files(ListOfFiles);
+      }
+           
+    async  function Move_Files(List){
+
+        console.log("Move_Files Function Called")
+        const dir = './temp';
+        if (!fs.existsSync(dir)) {
+          // await resolveAfter2Seconds();
+           fs.mkdirSync(dir, {recursive: true});
+          
+            for(let i = 0; i < List.length;i++){
+              await fsp.rename(directoryPath+'/'+ List[i] , dir+'/'+ List[i])
+            }
+          console.log('Done...!!!')
+          ForWait();
+        }
+        else{
+            for(let i = 0; i < List.length;i++){
+             await fsp.rename(directoryPath+'/'+ List[i] , dir+'/'+ List[i])
+           }
+           ForWait();
+          }
+      }
+
+       function ForWait(){
+        console.log("Ek Aur Koshish");
+        Reading_files();
+      }
+             
+             
+              //    console.log('Doneeee...!!!')
+              // }
+            //  else{
+            //     fs.rmdirSync(dir,{recursive:true});
+            //     console.log("deleted")
+            //   }
+   
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//    console.log(filenames)
+//    let data = [];
+//    let i = 0;
+//    filenames.forEach(function(filename){
+     
+//      data [i] = filename;
+//      if(i == 2)
+//        true;
+//       i++;
+//      })
+//      console.log("Records",data)
+//    // console.log("Records",data)
+//    const dir = './database/temp';
+//  if (!fs.existsSync(dir)) {
+//    fs.mkdirSync(dir, {
+//      recursive: true
+//    });
+//    const BreakError = {};
+//    data.forEach(function(filename){
+//      fse.copyFileSync(directoryPath+'/'+ filename , dir+'/'+ filename)
+//    })
+//       console.log('Done...!!!')
+//  }
+//  else{
+//    fs.rmdirSync(dir,{recursive:true});
+//    console.log("deleted")
+//  }
+ 
+      
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            //   MongoClient.connect(url, function(err, database) {
+            //     if (err) throw err;
+            //     var database_collection = database.db("CVE");
+  
+            // //   database_collection.collection("CVE-DETAILS").findOne({"CVE-ID": CVE_ID}, function(err, result) {  
+            // //     if (err) throw err;  
+            // //     console.log(result.CVE_ID);  
+            // // })  
+            //   database_collection.collection("CVE-DETAILS").insertMany(CVE_data_set, function(err, res) {
+            //     if (err) throw err;
+            //     console.log("Insert"); 
+            //   })
+
+            // database_collection.collection("CVE-DETAILS").insertMany(CVE_data_set, function(err, res) {
+            //   if (err){ console.log(err)}
+            //   console.log("Insert"); 
+            //    })
+
 
 
 
@@ -175,7 +369,7 @@ function storing_data_in_database() {
 // const path = require('path');
 // const directoryPath = path.join(__dirname, 'demo');
 // const fs = require('fs');
-// function storing_data_in_database() {
+// function Reading_files() {
 //   let filenames = fs.readdirSync(directoryPath);
 // 
 //   filenames.forEach(function(filename) {
@@ -199,7 +393,7 @@ function storing_data_in_database() {
 
 //       MongoClient.connect(url, function(err, database) {
 //         if (err) throw err;
-//         var database_collection = database.db("CVE-DATA");
+//         var database_collection = database.db("CVE");
 //         var CVE_DETAILS = []
 //         CVE_DETAILS.push({
 //           "CVE-ID": CVE_ID[filename],
@@ -233,13 +427,13 @@ function storing_data_in_database() {
 //   fs.readdir(directoryPath, function(err, filenames) {
 //     if (err) {
 //       onError(err);
-//       return;
+//       ;
 //     }
 //     filenames.forEach(function(filename) {
 //       fs.readFile(directoryPath + filename, 'utf-8', function(err, content) {
 //         if (err) {
 //           onError(err);
-//           return;
+//           ;
 //         }
 //         onFileContent(filename, content);
 
@@ -258,7 +452,7 @@ function storing_data_in_database() {
 // fs.readdir(directoryPath, function (err, files) {
     //handling error
     // if (err) {
-    //     return console.log('Unable to scan directory: ' + err);
+    //      console.log('Unable to scan directory: ' + err);
     // } 
     //listing all files using forEach
     // files.forEach(function (file) {
